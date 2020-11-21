@@ -1,0 +1,10 @@
+to: html5
+standalone: true
+self-contained: true
+table-of-contents: true
+template: $MARKARY/templates/default.html5
+css:
+  - $MARKARY/base.css
+filters:
+  - $MARKARY/include-git.hs
+  - $MARKARY/self-link-headers.hs
