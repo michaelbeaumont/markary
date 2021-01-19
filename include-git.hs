@@ -12,6 +12,7 @@ import Data.Bool
 import qualified Data.ByteString.Lazy as BL
 import Data.Either
 import Data.IORef
+import Data.List (unfoldr)
 import qualified Data.Map as M
 import Data.Maybe
 import Data.Text (Text)
@@ -27,11 +28,11 @@ newtype Ref = Ref {unRef :: T.Text} deriving (Show)
 
 data Mark = Add | Del deriving (Show)
 
-data MarkedLine = MarkedLine {line :: Int, mark :: Mark}
+data MarkedLine = MarkedLine {line :: Int, mark :: Mark} deriving (Show)
 
 data MarkedFile = MarkedFile {fileNo :: Int, markedLines :: [MarkedLine]}
 
-data FileRef = FileRef {uri :: Text, ref :: Ref, lines :: Lines, highlightDiff :: Maybe Ref} deriving (Show)
+data FileRef = FileRef {uri :: Text, ref :: Ref, lines :: Lines, chunk :: Maybe Int, highlightDiff :: Maybe Ref} deriving (Show)
 
 data Lines = All | From Int | Lines Int Int deriving (Show)
 
@@ -72,9 +73,10 @@ git args = do
   (code, out, _) <- readProcessWithExitCode "git" args ""
   return $ bool Nothing (Just $ T.pack out) (code == ExitSuccess)
 
-handleDiff :: Text -> IO (Text, [MarkedLine])
-handleDiff t = do
-  let trimmed = drop 1 . dropWhile (not . T.isPrefixOf "@@") . T.lines $ t
+handleDiff :: Int -> Text -> IO (Text, [MarkedLine])
+handleDiff chunk t = do
+  let takeChunk = break (T.isPrefixOf "@@") . drop 1 . dropWhile (not . T.isPrefixOf "@@")
+      diffChunks = unfoldr (fmap takeChunk . mfilter (not . null) . Just) $ T.lines t
       go (i, line) (lines, markedLines) =
         case T.uncons line of
           Just (c, rest) ->
@@ -88,15 +90,23 @@ handleDiff t = do
                    in markLine <$> mark
              in (rest : lines, maybe id (:) markedLine markedLines)
           _ -> (line : lines, markedLines)
-  return . first T.unlines $ foldr go ([], []) (zip [1 ..] trimmed)
+  return . first T.unlines $ foldr go ([], []) (zip [1 ..] (diffChunks !! chunk))
 
 getObj :: FileRef -> IO (Maybe Text, [MarkedLine])
-getObj FileRef {uri, ref = Ref ref, lines, highlightDiff} = do
+getObj FileRef {uri, ref = Ref ref, lines, chunk, highlightDiff} = do
   (out, handle) <-
     case highlightDiff of
       Just (Ref diff) -> do
-        out <- git ["diff", "-U10000", T.unpack diff, T.unpack ref, "--", T.unpack uri]
-        return (out, handleDiff)
+        let revRange =
+              case diff of
+                "^!" -> ref <> "^!"
+                _ -> diff <> ".." <> ref
+            context =
+              case chunk of
+                Nothing -> "-U10000"
+                Just _ -> "-U3"
+        out <- git ["diff", context, T.unpack revRange, "--", T.unpack uri]
+        return (out, handleDiff $ fromMaybe 0 chunk)
       Nothing -> do
         out <- git ["show", T.unpack $ ref <> ":" <> uri]
         return (out, return . (,[]))
@@ -134,6 +144,7 @@ fileRefFromKVs kvs =
   let a = lookup "a" kvs
       b = lookup "b" kvs
       diff = lookup "diff" kvs
+      rawChunk = lookup "chunk" kvs
       ref = lookup "ref" kvs
       uri = lookup "uri" kvs
    in flip fmap ((,) <$> uri <*> ref) $ \case
@@ -143,7 +154,8 @@ fileRefFromKVs kvs =
                   (Just (Right a), Just (Right b)) -> Lines a b
                   (Just (Right a), _) -> From a
                   _ -> All
-           in FileRef {uri, ref = Ref ref, lines, highlightDiff = Ref <$> diff}
+              chunk = fst . fromRight (error "couldn't parse chunk") . T.decimal <$> rawChunk
+           in FileRef {uri, ref = Ref ref, lines, chunk = chunk, highlightDiff = Ref <$> diff}
 
 includeGit :: IORef [MarkedFile] -> Meta -> Block -> IO Block
 includeGit markedAcc meta cb@(CodeBlock (ids, origAttrs, kvs) origContents) = do
@@ -154,10 +166,10 @@ includeGit markedAcc meta cb@(CodeBlock (ids, origAttrs, kvs) origContents) = do
       Nothing -> return ([], cb)
       Just fr@FileRef {uri, ref, lines} ->
         do
+          (obj, newMarked) <- getObj fr
           let url = do
                 repo <- getRepo meta
                 return $ getUrl repo fr
-          (obj, newMarked) <- getObj fr
           let (contents, attrs) = maybe (origContents, origAttrs) (,[]) obj
               repoLink = case url of
                 Just url ->
