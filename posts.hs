@@ -43,7 +43,7 @@ main =
             contents <- BL.readFile fn
             let makeCustom cm =
                   M.fromList $
-                    [ ("href", MetaString . T.pack $ takeBaseName fn <> ".html"),
+                    [ ("href", MetaString . T.pack $ takeBaseName fn),
                       ("date", MetaString $ date cm),
                       ("title", MetaString $ title cm)
                     ]
