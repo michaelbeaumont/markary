@@ -34,7 +34,7 @@ data MarkedFile = MarkedFile {fileNo :: Int, markedLines :: [MarkedLine]}
 
 data FileRef = FileRef {uri :: Text, ref :: Ref, lines :: Lines, chunk :: Maybe Int, highlightDiff :: Maybe Ref} deriving (Show)
 
-data Lines = All | From Int | Lines Int Int deriving (Show)
+data Lines = From Int | Lines Int Int deriving (Show)
 
 main :: IO ()
 main = do
@@ -118,7 +118,6 @@ getObj FileRef {uri, ref = Ref ref, lines, chunk, highlightDiff} = do
       let outLines = T.lines out
           (a, b) =
             case lines of
-              All -> (1, length outLines)
               From a -> (a, length outLines)
               Lines a b -> (a, b)
           marked' =
@@ -141,8 +140,14 @@ getRepo meta =
 
 fileRefFromKVs :: [(Text, Text)] -> Maybe FileRef
 fileRefFromKVs kvs =
-  let a = lookup "a" kvs
-      b = lookup "b" kvs
+  let a =
+        case fmap fst . T.decimal <$> lookup "a" kvs of
+          Just (Right x) -> x
+          _ -> 1
+      b =
+        case fmap fst . T.decimal <$> lookup "b" kvs of
+          Just (Right x) -> Just x
+          _ -> Nothing
       diff = lookup "diff" kvs
       rawChunk = lookup "chunk" kvs
       ref = lookup "ref" kvs
@@ -150,10 +155,9 @@ fileRefFromKVs kvs =
    in flip fmap ((,) <$> uri <*> ref) $ \case
         (uri, ref) ->
           let lines =
-                case (fmap fst . T.decimal <$> a, fmap fst . T.decimal <$> b) of
-                  (Just (Right a), Just (Right b)) -> Lines a b
-                  (Just (Right a), _) -> From a
-                  _ -> All
+                case (a, b) of
+                  (a, Just b) -> Lines a b
+                  (a, _) -> From a
               chunk = fst . fromRight (error "couldn't parse chunk") . T.decimal <$> rawChunk
            in FileRef {uri, ref = Ref ref, lines, chunk = chunk, highlightDiff = Ref <$> diff}
 
