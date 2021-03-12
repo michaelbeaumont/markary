@@ -24,7 +24,7 @@ body {
 }
 :root {
   --content-width: 80ex;
-  --nav-pct: 0; //0.2;
+  --nav-pct: 0;
 }
 article {
   display: flex;
@@ -56,6 +56,10 @@ nav#TOC > ul {
   padding-left: 0.5em;
   margin-top: 0;
   margin-bottom: 0;
+}
+figure {
+  margin-left: 20px;
+  margin-right: 20px;
 }
 footer {
   width: 100%;
@@ -93,7 +97,6 @@ figcaption {
   }
 }
 p {
-  margin-top: 1.7em;
 }
 a {
   color: #1a1a1a;
@@ -113,12 +116,10 @@ h3,
 h4,
 h5,
 h6 {
-  margin-top: 1.7em;
 }
 ol,
 ul {
   padding-left: 1.7em;
-  margin-top: 1.7em;
 }
 li > ol,
 li > ul {
@@ -139,7 +140,7 @@ code {
   padding: 0.1em 0.2em;
 }
 pre {
-  line-height: 1.5em;
+  line-height: 1.2em;
   background-color: #f0f0f0;
   overflow: auto;
 }
@@ -183,4 +184,5 @@ div.sourceCode {
 }
 pre.sourceCode {
   padding: 0em 0.5em;
+  overflow: auto;
 }
